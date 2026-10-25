@@ -287,6 +287,45 @@ EOF
 chmod 600 "$ENV_FILE"
 echo -e "${GN}[✓] Sync settings saved to ${ENV_FILE}${CL}"
 
+# Ensure /opt/fit2garmin/sync.sh is up to date and sources sync.env
+cat <<'EOF' >/opt/fit2garmin/sync.sh
+#!/usr/bin/env bash
+set -e
+
+# Load custom configuration if present
+if [[ -f /opt/fit2garmin/sync.env ]]; then
+  # shellcheck source=/dev/null
+  source /opt/fit2garmin/sync.env
+fi
+
+REMOTE="${RCLONE_REMOTE:-gdrive}"
+REMOTE_FOLDER="${RCLONE_FOLDER:-fit_files}"
+LOCAL_FOLDER="/opt/fit2garmin/fit_files"
+
+echo "[$(date '+%Y-%m-%d %H:%M:%S')] Starting gdrive2garmin sync..."
+
+# Check if rclone remote has been configured
+if rclone listremotes 2>/dev/null | grep -q "^${REMOTE}:"; then
+  echo "[$(date '+%Y-%m-%d %H:%M:%S')] Syncing from Google Drive (${REMOTE}:${REMOTE_FOLDER}) to ${LOCAL_FOLDER}..."
+  rclone sync "${REMOTE}:${REMOTE_FOLDER}" "$LOCAL_FOLDER" --include "*.fit" --include "*.FIT"
+  echo "[$(date '+%Y-%m-%d %H:%M:%S')] Google Drive sync completed."
+else
+  echo "[$(date '+%Y-%m-%d %H:%M:%S')] Warning: rclone remote '${REMOTE}' not configured yet. Run 'gdrive2garmin-setup'."
+  exit 1
+fi
+
+# Run fit2garmin upload script
+echo "[$(date '+%Y-%m-%d %H:%M:%S')] Uploading FIT files to Garmin Connect..."
+cd /opt/fit2garmin
+if [[ -f /opt/fit2garmin/fit2garmin.py ]]; then
+  python3 /opt/fit2garmin/fit2garmin.py
+elif [[ -f /opt/fit2garmin/upload_file_garmin.py ]]; then
+  python3 /opt/fit2garmin/upload_file_garmin.py
+fi
+echo "[$(date '+%Y-%m-%d %H:%M:%S')] Finished gdrive2garmin sync."
+EOF
+chmod +x /opt/fit2garmin/sync.sh
+
 # Test Google Drive connection
 echo -e "\n${CY}Testing connection to ${RCLONE_REMOTE_NAME}:${RCLONE_FOLDER_NAME}...${CL}"
 if rclone lsf "${RCLONE_REMOTE_NAME}:${RCLONE_FOLDER_NAME}" --max-depth 1 >/tmp/rclone_test.txt 2>&1; then
@@ -296,8 +335,10 @@ if rclone lsf "${RCLONE_REMOTE_NAME}:${RCLONE_FOLDER_NAME}" --max-depth 1 >/tmp/
   echo -e "    Found ${GN}${FILE_COUNT}${CL} .fit file(s) (${TOTAL_FILES} items total) in '${RCLONE_FOLDER_NAME}'."
   rm -f /tmp/rclone_test.txt
 else
-  echo -e "${YW}[!] Note: Could not list files in '${RCLONE_REMOTE_NAME}:${RCLONE_FOLDER_NAME}'.${CL}"
-  echo -e "    Ensure the folder exists in your Google Drive and the remote is authorized."
+  echo -e "${YW}[!] Note: Could not find folder '${RCLONE_FOLDER_NAME}' on Google Drive.${CL}"
+  echo -e "${CY}    Available top-level folders found on your Google Drive:${CL}"
+  rclone lsd "${RCLONE_REMOTE_NAME}:" 2>/dev/null | awk '{for(i=5;i<=NF;i++) printf "%s%s", $i, (i==NF?ORS:OFS)}' | sed 's/^/      • /' || true
+  echo -e "    (You can edit ${ENV_FILE} or re-run 'gdrive2garmin-setup' with the exact folder name)\n"
 fi
 
 # ------------------------------------------------------------------------------
