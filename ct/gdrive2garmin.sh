@@ -34,10 +34,9 @@ function update_script() {
   msg_info "Updating fit2garmin"
   cd /opt/fit2garmin
   git pull
-  $STD pip3 install --upgrade --break-system-packages garth
-  if [[ -f /opt/fit2garmin/upload_file_garmin.py && ! -f /opt/fit2garmin/fit2garmin.py ]]; then
-    ln -s /opt/fit2garmin/upload_file_garmin.py /opt/fit2garmin/fit2garmin.py
-  fi
+  $STD pip3 install --upgrade --break-system-packages garminconnect curl_cffi
+  curl -fsSL "https://raw.githubusercontent.com/dngoyb/gdrive2garmin/main/install/fit2garmin_modern.py" -o /opt/fit2garmin/fit2garmin.py 2>/dev/null || true
+  chmod +x /opt/fit2garmin/fit2garmin.py
   msg_ok "Updated fit2garmin"
   msg_ok "Updated successfully!"
   exit

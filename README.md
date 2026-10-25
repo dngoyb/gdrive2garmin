@@ -1,6 +1,6 @@
 # gdrive2garmin
 
-An automated **Proxmox VE LXC Container** script that synchronizes `.fit` activity/health files from **Google Drive** (via `rclone`) and automatically uploads them to **Garmin Connect** using [`fit2garmin`](https://github.com/Jacopo1891/fit2garmin) and [`garth`](https://github.com/matin/garth).
+An automated **Proxmox VE LXC Container** script that synchronizes `.fit` activity/health files from **Google Drive** (via `rclone`) and automatically uploads them to **Garmin Connect** using [`garminconnect`](https://github.com/cyberjunky/python-garminconnect) and [`curl_cffi`](https://github.com/lexiforest/curl_cffi) (featuring TLS fingerprint impersonation to bypass Garmin Cloudflare 429 blocks).
 
 Built following the official [Community-Scripts / Proxmox VE Helper-Scripts](https://github.com/community-scripts/ProxmoxVE) orchestration standard.
 
@@ -12,7 +12,7 @@ Built following the official [Community-Scripts / Proxmox VE Helper-Scripts](htt
 flowchart LR
     A[Health Sync / Huawei Health / Smart Scale] -->|Exports .fit files| B[Google Drive]
     B -->|rclone sync every 15m| C[LXC: /opt/fit2garmin/fit_files]
-    C -->|fit2garmin + garth| D[Garmin Connect]
+    C -->|garminconnect + curl_cffi| D[Garmin Connect]
 ```
 
 1. External health devices or apps (e.g. Huawei Health via Health Sync) export `.fit` files to a designated Google Drive folder.
@@ -144,6 +144,7 @@ The installation automatically deploys a cron job in `/etc/cron.d/gdrive2garmin`
 │   └── gdrive2garmin.sh          # Proxmox LXC creation & orchestration script
 ├── install/
 │   ├── gdrive2garmin-install.sh  # In-container setup, packages & configuration
+│   ├── fit2garmin_modern.py      # Modern Garmin sync engine (garminconnect + curl_cffi)
 │   └── setup.sh                  # In-container setup wizard implementation
 ├── setup.sh                      # One-line entrypoint for setup wizard inside LXC
 └── README.md                     # Documentation
@@ -153,20 +154,20 @@ The installation automatically deploys a cron job in `/etc/cron.d/gdrive2garmin`
 
 ## 🔄 Updates & Maintenance
 
-To update the container's `fit2garmin` scripts and dependencies in the future, run the creation script again or execute:
+To update the container's scripts and dependencies in the future, run the creation script again or execute:
 
 ```bash
-cd /opt/fit2garmin
-git pull
-pip3 install --upgrade --break-system-packages garth
+pip3 install --upgrade --break-system-packages garminconnect curl_cffi
+curl -fsSL https://raw.githubusercontent.com/dngoyb/gdrive2garmin/main/install/fit2garmin_modern.py -o /opt/fit2garmin/fit2garmin.py
+chmod +x /opt/fit2garmin/fit2garmin.py
 ```
 
 ---
 
 ## 📜 Credits
 
-- [`fit2garmin`](https://github.com/Jacopo1891/fit2garmin) by [Jacopo1891](https://github.com/Jacopo1891)
-- [`garth`](https://github.com/matin/garth) by [Matin](https://github.com/matin)
+- [`garminconnect`](https://github.com/cyberjunky/python-garminconnect) by [cyberjunky](https://github.com/cyberjunky)
+- [`curl_cffi`](https://github.com/lexiforest/curl_cffi) for browser TLS fingerprint impersonation
 - Base orchestration inspired by [Community-Scripts / Proxmox VE Helper-Scripts](https://github.com/community-scripts/ProxmoxVE)
 
 ---

@@ -21,7 +21,7 @@ CL="\033[m"
 INSTALL_DIR="/opt/fit2garmin"
 CONFIG_FILE="${INSTALL_DIR}/config.py"
 ENV_FILE="${INSTALL_DIR}/sync.env"
-GARTH_DIR="/root/.garth"
+GARMIN_TOKEN_DIR="/root/.garminconnect"
 
 clear 2>/dev/null || true
 cat << "EOF"
@@ -42,13 +42,23 @@ if [[ $EUID -ne 0 ]]; then
 fi
 
 # Verify / create installation directory
-mkdir -p "$INSTALL_DIR" "$INSTALL_DIR/fit_files" "$GARTH_DIR"
-chmod 700 "$GARTH_DIR"
+mkdir -p "$INSTALL_DIR" "$INSTALL_DIR/fit_files" "$GARMIN_TOKEN_DIR"
+chmod 700 "$GARMIN_TOKEN_DIR"
 
-# Ensure garth is installed
-if ! python3 -c "import garth" 2>/dev/null; then
-  echo -e "${CY}Installing required Python dependency (garth)...${CL}"
-  pip3 install --break-system-packages garth 2>/dev/null || pip3 install garth
+# Ensure modern garminconnect and curl_cffi are installed (replaces deprecated garth)
+if ! python3 -c "import garminconnect" 2>/dev/null || ! python3 -c "import curl_cffi" 2>/dev/null; then
+  echo -e "${CY}Installing modern Garmin Connect libraries (garminconnect & curl_cffi)...${CL}"
+  pip3 install --break-system-packages garminconnect curl_cffi 2>/dev/null || pip3 install garminconnect curl_cffi
+fi
+
+# Upgrade fit2garmin engine to modern garminconnect if missing or using old garth
+if [[ ! -f "${INSTALL_DIR}/fit2garmin.py" ]] || grep -q "garth" "${INSTALL_DIR}/fit2garmin.py" 2>/dev/null; then
+  echo -e "${CY}Installing modern Garmin sync engine...${CL}"
+  curl -fsSL "https://raw.githubusercontent.com/dngoyb/gdrive2garmin/main/install/fit2garmin_modern.py" -o "${INSTALL_DIR}/fit2garmin.py" 2>/dev/null || true
+  if [[ ! -s "${INSTALL_DIR}/fit2garmin.py" && -f "$(dirname "${BASH_SOURCE[0]}")/fit2garmin_modern.py" ]]; then
+    cp "$(dirname "${BASH_SOURCE[0]}")/fit2garmin_modern.py" "${INSTALL_DIR}/fit2garmin.py"
+  fi
+  chmod +x "${INSTALL_DIR}/fit2garmin.py"
 fi
 
 # Persist script in /opt/fit2garmin and symlink to PATH if not already there
@@ -121,17 +131,15 @@ except FileNotFoundError:
 garmin_email = ""
 garmin_password = ""
 folder_path = "/opt/fit2garmin/fit_files"
-session_file_path = "~/.garth"
-file_name_template = "{prefix} {date} {source}.fit"
-file_name_config = {
-    "prefix": "Huawei Health",
-    "source": "Smart Scale"
-}
+token_store_path = "~/.garminconnect"
 '''
 
 content = re.sub(r'garmin_email\s*=\s*.*', f'garmin_email = {repr(email)}', content)
 content = re.sub(r'garmin_password\s*=\s*.*', f'garmin_password = {repr(password)}', content)
 content = re.sub(r'folder_path\s*=\s*.*', 'folder_path = "/opt/fit2garmin/fit_files"', content)
+
+if "token_store_path" not in content:
+    content += '\ntoken_store_path = "~/.garminconnect"\n'
 
 with open(config_path, "w") as f:
     f.write(content)
@@ -140,36 +148,48 @@ PYEOF
 chmod 600 "$CONFIG_FILE"
 echo -e "${GN}[✓] Garmin credentials saved securely.${CL}"
 
-# Authenticate with Garmin using Garth
+# Authenticate with Garmin using garminconnect + curl_cffi
 echo -e "\n${CY}Authenticating with Garmin Connect...${CL}"
-echo -e "${BL}(Note: If your Garmin account has Two-Factor Authentication (2FA/MFA) enabled,${CL}"
-echo -e "${BL} Garmin will send a 6-digit code. Enter it below if prompted.)${CL}\n"
+echo -e "${BL}(Note: If your account has Two-Factor Authentication (2FA/MFA) enabled,${CL}"
+echo -e "${BL} you will receive a code. Enter it below if prompted.)${CL}\n"
 
-GARTH_AUTH_SUCCESS=0
-python3 - <<PYEOF || GARTH_AUTH_SUCCESS=1
+GARMIN_AUTH_SUCCESS=0
+python3 - <<PYEOF || GARMIN_AUTH_SUCCESS=1
 import sys
 import os
-import garth
+from garminconnect import (
+    Garmin,
+    GarminConnectAuthenticationError,
+    GarminConnectConnectionError,
+    GarminConnectTooManyRequestsError,
+)
 
 email = """${GARMIN_EMAIL}"""
 password = """${GARMIN_PASSWORD}"""
-session_dir = os.path.expanduser("~/.garth")
+token_dir = os.path.expanduser("~/.garminconnect")
+os.makedirs(token_dir, exist_ok=True)
+os.chmod(token_dir, 0o700)
 
 try:
-    garth.login(email, password)
-    garth.save(session_dir)
-    username = getattr(garth.client, 'username', 'Unknown')
-    print(f"\033[01;32m[✓] Successfully authenticated as Garmin user: {username}\033[m")
-    print(f"\033[01;32m[✓] Session tokens saved to: {session_dir}\033[m")
+    client = Garmin(email, password)
+    client.login(tokenstore=token_dir)
+    display_name = getattr(client, "display_name", None) or getattr(client, "full_name", None) or email
+    print(f"\033[01;32m[✓] Successfully authenticated as Garmin user: {display_name}\033[m")
+    print(f"\033[01;32m[✓] Session tokens saved to: {token_dir}\033[m")
+except GarminConnectTooManyRequestsError as e:
+    print(f"\033[01;31m[!] Rate-limited by Garmin SSO (429): {e}\033[m", file=sys.stderr)
+    print(f"\033[01;33m    Garmin is enforcing a temporary cooldown on this account/IP from previous attempts.\033[m", file=sys.stderr)
+    print(f"\033[01;33m    Please allow 30-60 minutes for Garmin's cooldown to expire, then re-run setup.\033[m", file=sys.stderr)
+    sys.exit(1)
 except Exception as e:
     print(f"\033[01;31m[!] Garmin authentication failed: {e}\033[m", file=sys.stderr)
     sys.exit(1)
 PYEOF
 
-if [[ $GARTH_AUTH_SUCCESS -ne 0 ]]; then
-  echo -e "\n${YW}[!] Authentication failed. Please check credentials and re-run setup.${CL}"
+if [[ $GARMIN_AUTH_SUCCESS -ne 0 ]]; then
+  echo -e "\n${YW}[!] Note: If Garmin placed a temporary cooldown on your account, please wait before retrying.${CL}"
 else
-  chmod 600 "$GARTH_DIR"/*.json 2>/dev/null || true
+  chmod 600 "$GARMIN_TOKEN_DIR"/* 2>/dev/null || true
 fi
 
 # ------------------------------------------------------------------------------

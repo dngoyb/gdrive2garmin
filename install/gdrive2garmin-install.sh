@@ -17,6 +17,8 @@ msg_info "Installing Dependencies"
 $STD apt-get install -y \
   python3 \
   python3-pip \
+  python3-dev \
+  libffi-dev \
   rclone \
   git \
   cron \
@@ -26,11 +28,14 @@ msg_ok "Installed Dependencies"
 
 msg_info "Setting up fit2garmin"
 $STD git clone https://github.com/Jacopo1891/fit2garmin.git /opt/fit2garmin
-# Debian 12 uses PEP 668 externally managed environment
-$STD pip3 install --break-system-packages garth || $STD pip3 install garth
-if [[ -f /opt/fit2garmin/upload_file_garmin.py && ! -f /opt/fit2garmin/fit2garmin.py ]]; then
-  ln -s /opt/fit2garmin/upload_file_garmin.py /opt/fit2garmin/fit2garmin.py
+# Debian 12 uses PEP 668 externally managed environment - install modern garminconnect + curl_cffi
+$STD pip3 install --break-system-packages garminconnect curl_cffi || $STD pip3 install garminconnect curl_cffi
+# Deploy modern sync engine (replaces deprecated garth with curl_cffi TLS impersonation)
+curl -fsSL "https://raw.githubusercontent.com/dngoyb/gdrive2garmin/main/install/fit2garmin_modern.py" -o /opt/fit2garmin/fit2garmin.py 2>/dev/null || true
+if [[ ! -s /opt/fit2garmin/fit2garmin.py && -f "$(dirname "${BASH_SOURCE[0]}")/fit2garmin_modern.py" ]]; then
+  cp "$(dirname "${BASH_SOURCE[0]}")/fit2garmin_modern.py" /opt/fit2garmin/fit2garmin.py
 fi
+chmod +x /opt/fit2garmin/fit2garmin.py
 msg_ok "Setup fit2garmin"
 
 msg_info "Configuring fit2garmin"
@@ -39,6 +44,7 @@ cp /opt/fit2garmin/config.example.py /opt/fit2garmin/config.py
 sed -i 's|garmin_email = .*|garmin_email = ""|' /opt/fit2garmin/config.py
 sed -i 's|garmin_password = .*|garmin_password = ""|' /opt/fit2garmin/config.py
 sed -i 's|folder_path = .*|folder_path = "/opt/fit2garmin/fit_files"|' /opt/fit2garmin/config.py
+echo 'token_store_path = "~/.garminconnect"' >> /opt/fit2garmin/config.py
 chmod 600 /opt/fit2garmin/config.py
 
 cat <<'EOF' >/opt/fit2garmin/sync.env
