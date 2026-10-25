@@ -1,0 +1,15 @@
+# Scratch / tests
+test.md
+
+# Logs & temp
+*.log
+/scratch/
+
+# Python cache & tokens
+__pycache__/
+*.py[cod]
+.garth/
+
+# Local configuration overrides
+sync.env
+/fit_files/

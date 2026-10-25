@@ -45,20 +45,38 @@ bash -c "$(curl -fsSL https://raw.githubusercontent.com/dngoyb/gdrive2garmin/mai
 
 ## ⚙️ Post-Installation Configuration
 
-Because Garmin credentials and Google Drive OAuth authentication require user interaction, perform these two quick setup steps inside the container after deployment.
+Because Garmin credentials and Google Drive OAuth authentication require user interaction, an interactive setup wizard is provided inside the container.
 
-### 1. Access the Container Console
+### Method 1: Interactive Setup Wizard (Recommended)
 
-From your Proxmox host shell:
-```bash
-pct enter <CTID>
-```
-*(Replace `<CTID>` with the container ID shown upon completion, e.g. `pct enter 105`)*
+1. **Access the Container Console** (from your Proxmox host shell):
+   ```bash
+   pct enter <CTID>
+   ```
+   *(Replace `<CTID>` with the container ID shown upon creation, e.g. `pct enter 105`)*
+
+2. **Run the Setup Wizard**:
+   Inside the container, either run:
+   ```bash
+   gdrive2garmin-setup
+   ```
+   Or paste this single-line command:
+   ```bash
+   bash -c "$(curl -fsSL https://raw.githubusercontent.com/dngoyb/gdrive2garmin/main/setup.sh)"
+   ```
+
+3. **Follow the interactive prompts**:
+   - **Garmin Credentials**: Prompts for your Garmin email & password (supports 2FA/MFA if enabled on your Garmin account).
+   - **Google Drive Authentication**: Easily authorize Google Drive via token or guided `rclone config`, and select your remote `.fit` folder.
+   - **Verification**: Automatically tests Garmin authentication, checks files in Google Drive, and offers an immediate test sync.
 
 ---
 
-### 2. Set Up Garmin Credentials
+### Method 2: Manual Configuration
 
+If you prefer configuring credentials and remotes manually:
+
+#### 1. Set Up Garmin Credentials
 Edit `/opt/fit2garmin/config.py`:
 ```bash
 nano /opt/fit2garmin/config.py
@@ -76,10 +94,7 @@ session_file_path = "~/.garth"
 ```
 Save and exit (`Ctrl+O`, `Enter`, `Ctrl+X`).
 
----
-
-### 3. Authenticate Google Drive via `rclone`
-
+#### 2. Authenticate Google Drive via `rclone`
 Run the interactive `rclone` configuration:
 ```bash
 rclone config
@@ -91,13 +106,10 @@ rclone config
 4. Leave `client_id` and `client_secret` blank (or provide your own Google Cloud API credentials).
 5. Scope: Choose `1` (Full access).
 6. When prompted for **Use web browser to automatically authenticate**, choose `n` (headless / remote machine).
-7. Follow the on-screen instructions to authorize via your desktop browser and paste the returned verification code/token.
+7. Follow the on-screen instructions to authorize via your desktop browser (`rclone authorize "drive"`) and paste the returned verification token.
 8. Confirm and save the remote (`q` to quit config).
 
----
-
-### 4. Verify & Test Synchronization
-
+#### 3. Verify & Test Synchronization
 Test the sync script manually:
 ```bash
 /opt/fit2garmin/sync.sh
@@ -120,7 +132,7 @@ The installation automatically deploys a cron job in `/etc/cron.d/gdrive2garmin`
 
 - **Frequency**: Every 15 minutes.
 - **Log file**: `/var/log/gdrive2garmin.log`.
-- To modify the interval or target Google Drive folder, customize `/etc/cron.d/gdrive2garmin` or environment variables in `/opt/fit2garmin/sync.sh`.
+- To modify the interval or target Google Drive folder, customize `/etc/cron.d/gdrive2garmin` or edit `/opt/fit2garmin/sync.env`.
 
 ---
 
@@ -131,7 +143,9 @@ The installation automatically deploys a cron job in `/etc/cron.d/gdrive2garmin`
 ├── ct/
 │   └── gdrive2garmin.sh          # Proxmox LXC creation & orchestration script
 ├── install/
-│   └── gdrive2garmin-install.sh  # In-container setup, packages & configuration
+│   ├── gdrive2garmin-install.sh  # In-container setup, packages & configuration
+│   └── setup.sh                  # In-container setup wizard implementation
+├── setup.sh                      # One-line entrypoint for setup wizard inside LXC
 └── README.md                     # Documentation
 ```
 
