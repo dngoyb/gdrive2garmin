@@ -51,15 +51,25 @@ if ! python3 -c "import garminconnect" 2>/dev/null || ! python3 -c "import curl_
   pip3 install --break-system-packages garminconnect curl_cffi 2>/dev/null || pip3 install garminconnect curl_cffi
 fi
 
-# Upgrade fit2garmin engine to modern garminconnect if missing or using old garth
-if [[ ! -f "${INSTALL_DIR}/fit2garmin.py" ]] || grep -q "garth" "${INSTALL_DIR}/fit2garmin.py" 2>/dev/null; then
-  echo -e "${CY}Installing modern Garmin sync engine...${CL}"
-  curl -fsSL "https://raw.githubusercontent.com/dngoyb/gdrive2garmin/main/install/fit2garmin_modern.py" -o "${INSTALL_DIR}/fit2garmin.py" 2>/dev/null || true
-  if [[ ! -s "${INSTALL_DIR}/fit2garmin.py" && -f "$(dirname "${BASH_SOURCE[0]}")/fit2garmin_modern.py" ]]; then
-    cp "$(dirname "${BASH_SOURCE[0]}")/fit2garmin_modern.py" "${INSTALL_DIR}/fit2garmin.py"
+# Self-update setup wizard from GitHub if online
+if [[ "${SKIP_SETUP_UPDATE:-0}" != "1" ]]; then
+  LATEST_SETUP=$(curl -fsSL https://raw.githubusercontent.com/dngoyb/gdrive2garmin/main/install/setup.sh 2>/dev/null || true)
+  if [[ -n "$LATEST_SETUP" ]] && ! cmp -s <(echo "$LATEST_SETUP") "${BASH_SOURCE[0]}" 2>/dev/null; then
+    echo -e "${CY}Updating setup wizard to latest version from GitHub...${CL}"
+    echo "$LATEST_SETUP" > "${INSTALL_DIR}/setup.sh"
+    chmod +x "${INSTALL_DIR}/setup.sh"
+    export SKIP_SETUP_UPDATE=1
+    exec "${INSTALL_DIR}/setup.sh" "$@"
   fi
-  chmod +x "${INSTALL_DIR}/fit2garmin.py"
 fi
+
+# Ensure latest fit2garmin engine is deployed
+echo -e "${CY}Ensuring latest Garmin sync engine is installed...${CL}"
+curl -fsSL "https://raw.githubusercontent.com/dngoyb/gdrive2garmin/main/install/fit2garmin_modern.py" -o "${INSTALL_DIR}/fit2garmin.py" 2>/dev/null || true
+if [[ ! -s "${INSTALL_DIR}/fit2garmin.py" && -f "$(dirname "${BASH_SOURCE[0]}")/fit2garmin_modern.py" ]]; then
+  cp "$(dirname "${BASH_SOURCE[0]}")/fit2garmin_modern.py" "${INSTALL_DIR}/fit2garmin.py"
+fi
+chmod +x "${INSTALL_DIR}/fit2garmin.py"
 
 # Persist script in /opt/fit2garmin and symlink to PATH if not already there
 if [[ ! -f "${INSTALL_DIR}/setup.sh" ]] || [[ "${BASH_SOURCE[0]:-}" != "${INSTALL_DIR}/setup.sh" ]]; then
