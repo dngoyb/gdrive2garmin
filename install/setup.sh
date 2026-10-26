@@ -280,9 +280,20 @@ if [[ -n "$INPUT_FOLDER" ]]; then
   RCLONE_FOLDER_NAME="$INPUT_FOLDER"
 fi
 
+CLEANUP_NON_FIT="true"
+FIT_RETENTION_DAYS="5"
+if [[ -f "$ENV_FILE" ]]; then
+  EXISTING_CLEANUP=$(grep '^CLEANUP_NON_FIT=' "$ENV_FILE" | cut -d= -f2- | tr -d "\"'" || true)
+  EXISTING_RETENTION=$(grep '^FIT_RETENTION_DAYS=' "$ENV_FILE" | cut -d= -f2- | tr -d "\"'" || true)
+  if [[ -n "$EXISTING_CLEANUP" ]]; then CLEANUP_NON_FIT="$EXISTING_CLEANUP"; fi
+  if [[ -n "$EXISTING_RETENTION" ]]; then FIT_RETENTION_DAYS="$EXISTING_RETENTION"; fi
+fi
+
 cat <<EOF > "$ENV_FILE"
 RCLONE_REMOTE="${RCLONE_REMOTE_NAME}"
 RCLONE_FOLDER="${RCLONE_FOLDER_NAME}"
+CLEANUP_NON_FIT="${CLEANUP_NON_FIT}"
+FIT_RETENTION_DAYS="${FIT_RETENTION_DAYS}"
 EOF
 chmod 600 "$ENV_FILE"
 echo -e "${GN}[✓] Sync settings saved to ${ENV_FILE}${CL}"
@@ -318,10 +329,29 @@ fi
 echo "[$(date '+%Y-%m-%d %H:%M:%S')] Uploading FIT files to Garmin Connect..."
 cd /opt/fit2garmin
 if [[ -f /opt/fit2garmin/fit2garmin.py ]]; then
-  python3 /opt/fit2garmin/fit2garmin.py
+  python3 /opt/fit2garmin/fit2garmin.py || true
 elif [[ -f /opt/fit2garmin/upload_file_garmin.py ]]; then
-  python3 /opt/fit2garmin/upload_file_garmin.py
+  python3 /opt/fit2garmin/upload_file_garmin.py || true
 fi
+
+# Cleanup Google Drive: remove redundant formats (.gpx, .kml, .tcx, .csv)
+if [[ "${CLEANUP_NON_FIT:-true}" == "true" ]]; then
+  echo "[$(date '+%Y-%m-%d %H:%M:%S')] Cleaning redundant non-FIT files from Google Drive..."
+  rclone delete "${REMOTE}:${REMOTE_FOLDER}" \
+    --include "*.gpx" --include "*.GPX" \
+    --include "*.kml" --include "*.KML" \
+    --include "*.tcx" --include "*.TCX" \
+    --include "*.csv" --include "*.CSV" || true
+fi
+
+# Retention policy: purge .fit files older than FIT_RETENTION_DAYS (default: 5 days)
+if [[ -n "${FIT_RETENTION_DAYS:-}" && "${FIT_RETENTION_DAYS}" -gt 0 ]] 2>/dev/null; then
+  echo "[$(date '+%Y-%m-%d %H:%M:%S')] Purging FIT files older than ${FIT_RETENTION_DAYS} days from Google Drive..."
+  rclone delete "${REMOTE}:${REMOTE_FOLDER}" \
+    --min-age "${FIT_RETENTION_DAYS}d" \
+    --include "*.fit" --include "*.FIT" || true
+fi
+
 echo "[$(date '+%Y-%m-%d %H:%M:%S')] Finished gdrive2garmin sync."
 EOF
 chmod +x /opt/fit2garmin/sync.sh
@@ -355,13 +385,19 @@ if [[ "$RUN_TEST_SYNC" =~ ^[Yy]$ ]]; then
   echo -e "${BOLD}------------------------------------------------------------${CL}"
 fi
 
-# Check cron job
+# Check or update cron job
+cat <<'CRONEOF' >/etc/cron.d/gdrive2garmin
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
+
+# Active hours: Morning (06:00-11:30), Midday (14:00-15:30), Evening (17:00-19:30) every 30 minutes
+0,30 6-11,14-15,17-19 * * * root /opt/fit2garmin/sync.sh >> /var/log/gdrive2garmin.log 2>&1
+CRONEOF
+chmod 644 /etc/cron.d/gdrive2garmin
 echo -e "\n${BOLD}Automation Status:${CL}"
-if [[ -f /etc/cron.d/gdrive2garmin ]]; then
-  echo -e "${GN}[✓] Automated cron job active in /etc/cron.d/gdrive2garmin${CL}"
-  echo -e "    Schedule: Runs every 15 minutes automatically."
-  echo -e "    Log file: /var/log/gdrive2garmin.log"
-fi
+echo -e "${GN}[✓] Automated cron job active in /etc/cron.d/gdrive2garmin${CL}"
+echo -e "    Schedule: Runs every 30 minutes during active hours (06:00-11:30, 14:00-15:30, 17:00-19:30)."
+echo -e "    Log file: /var/log/gdrive2garmin.log"
 
 echo -e "\n${BOLD}================================================================${CL}"
 echo -e "${GN}${BOLD}🎉 Setup Complete!${CL}"

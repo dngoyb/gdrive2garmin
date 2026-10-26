@@ -50,6 +50,8 @@ chmod 600 /opt/fit2garmin/config.py
 cat <<'EOF' >/opt/fit2garmin/sync.env
 RCLONE_REMOTE="gdrive"
 RCLONE_FOLDER="fit_files"
+CLEANUP_NON_FIT="true"
+FIT_RETENTION_DAYS="5"
 EOF
 chmod 600 /opt/fit2garmin/sync.env
 msg_ok "Configured fit2garmin"
@@ -97,10 +99,29 @@ fi
 echo "[$(date '+%Y-%m-%d %H:%M:%S')] Uploading FIT files to Garmin Connect..."
 cd /opt/fit2garmin
 if [[ -f /opt/fit2garmin/fit2garmin.py ]]; then
-  python3 /opt/fit2garmin/fit2garmin.py
+  python3 /opt/fit2garmin/fit2garmin.py || true
 elif [[ -f /opt/fit2garmin/upload_file_garmin.py ]]; then
-  python3 /opt/fit2garmin/upload_file_garmin.py
+  python3 /opt/fit2garmin/upload_file_garmin.py || true
 fi
+
+# Cleanup Google Drive: remove redundant formats (.gpx, .kml, .tcx, .csv)
+if [[ "${CLEANUP_NON_FIT:-true}" == "true" ]]; then
+  echo "[$(date '+%Y-%m-%d %H:%M:%S')] Cleaning redundant non-FIT files from Google Drive..."
+  rclone delete "${REMOTE}:${REMOTE_FOLDER}" \
+    --include "*.gpx" --include "*.GPX" \
+    --include "*.kml" --include "*.KML" \
+    --include "*.tcx" --include "*.TCX" \
+    --include "*.csv" --include "*.CSV" || true
+fi
+
+# Retention policy: purge .fit files older than FIT_RETENTION_DAYS (default: 5 days)
+if [[ -n "${FIT_RETENTION_DAYS:-}" && "${FIT_RETENTION_DAYS}" -gt 0 ]] 2>/dev/null; then
+  echo "[$(date '+%Y-%m-%d %H:%M:%S')] Purging FIT files older than ${FIT_RETENTION_DAYS} days from Google Drive..."
+  rclone delete "${REMOTE}:${REMOTE_FOLDER}" \
+    --min-age "${FIT_RETENTION_DAYS}d" \
+    --include "*.fit" --include "*.FIT" || true
+fi
+
 echo "[$(date '+%Y-%m-%d %H:%M:%S')] Finished gdrive2garmin sync."
 EOF
 chmod +x /opt/fit2garmin/sync.sh
@@ -109,7 +130,8 @@ cat <<'EOF' >/etc/cron.d/gdrive2garmin
 SHELL=/bin/bash
 PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
 
-*/15 * * * * root /opt/fit2garmin/sync.sh >> /var/log/gdrive2garmin.log 2>&1
+# Active hours: Morning (06:00-11:30), Midday (14:00-15:30), Evening (17:00-19:30) every 30 minutes
+0,30 6-11,14-15,17-19 * * * root /opt/fit2garmin/sync.sh >> /var/log/gdrive2garmin.log 2>&1
 EOF
 chmod 644 /etc/cron.d/gdrive2garmin
 msg_ok "Setup Cron Automation"
@@ -123,5 +145,5 @@ echo -e "${TAB}${GATEWAY} 1. Enter the container: ${BL}pct enter <CTID>${CL}"
 echo -e "${TAB}${GATEWAY} 2. Launch the interactive setup wizard:"
 echo -e "${TAB}      ${GN}gdrive2garmin-setup${CL}"
 echo -e "${TAB}${GATEWAY} 3. The wizard will configure Garmin, rclone (Google Drive), and test sync."
-echo -e "${TAB}${GATEWAY} 4. Automated cron runs every 15 minutes."
+echo -e "${TAB}${GATEWAY} 4. Automated cron runs every 30 minutes during active hours (06:00-11:30, 14:00-15:30, 17:00-19:30)."
 echo -e "${TAB}      Logs: ${BL}/var/log/gdrive2garmin.log${CL}\n"

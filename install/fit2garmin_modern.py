@@ -183,12 +183,12 @@ def mark_all_current_files_as_processed() -> None:
   )
 
 
-def upload_fit_files(client: Garmin) -> None:
-  """Scan folder and upload only new, unprocessed .fit files."""
+def find_pending_fit_files() -> list[Path]:
+  """Scan folder and return only new, unprocessed .fit files."""
   folder = Path(FOLDER_PATH)
   if not folder.exists():
     logger.warning(f"Watch folder does not exist: {folder}")
-    return
+    return []
 
   fit_files = sorted(
       [
@@ -201,7 +201,7 @@ def upload_fit_files(client: Garmin) -> None:
 
   if not fit_files:
     logger.info(f"No .fit files found in {folder}.")
-    return
+    return []
 
   processed = load_processed_files()
   cutoff = get_cutoff_timestamp()
@@ -231,12 +231,23 @@ def upload_fit_files(client: Garmin) -> None:
         f"All {len(fit_files)} file(s) in {folder} are already processed."
         " Waiting for new files."
     )
+    return []
+
+  return to_upload
+
+
+def upload_fit_files(
+    client: Garmin, to_upload: list[Path] | None = None
+) -> None:
+  """Upload pending .fit files to Garmin Connect."""
+  if to_upload is None:
+    to_upload = find_pending_fit_files()
+
+  if not to_upload:
     return
 
-  logger.info(
-      f"Found {len(to_upload)} new .fit file(s) to upload out of"
-      f" {len(fit_files)} total."
-  )
+  logger.info(f"Found {len(to_upload)} new .fit file(s) to upload.")
+  processed = load_processed_files()
   uploaded_count = 0
   duplicate_count = 0
   error_count = 0
@@ -309,8 +320,13 @@ def main() -> None:
     mark_all_current_files_as_processed()
     return
 
+  pending = find_pending_fit_files()
+  if not pending:
+    return
+
+  # Lazy authentication: only connect to Garmin Connect when there are actual files to upload
   client = get_client()
-  upload_fit_files(client)
+  upload_fit_files(client, pending)
 
 
 if __name__ == "__main__":

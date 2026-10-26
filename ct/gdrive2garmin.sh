@@ -56,5 +56,5 @@ echo -e "${INFO}The wizard handles:"
 echo -e "  • Garmin Connect credentials & authentication (with 2FA/MFA support)"
 echo -e "  • Google Drive rclone configuration & folder selection"
 echo -e "  • Live test synchronization & cron validation"
-echo -e "  (Logs: /var/log/gdrive2garmin.log | Cron: Every 15 minutes)"
+echo -e "  (Logs: /var/log/gdrive2garmin.log | Cron: Active hours every 30m)"
 
