@@ -29,12 +29,38 @@ External health devices/apps export `.fit` files to Google Drive → gdrive2garm
 
 ### 📦 Option 1: Proxmox VE (Original Method)
 
+**Run this command in your Proxmox VE Node Shell** to create and configure the container:
+
 ```bash
-# Run in Proxmox node shell
 bash -c "$(curl -fsSL https://raw.githubusercontent.com/dngoyb/gdrive2garmin/main/ct/gdrive2garmin.sh)"
 ```
 
-Then access container console: `pct enter <CTID>` and run: `gdrive2garmin-setup`
+**What this does:**
+- Creates an LXC container with 1 CPU, 512MB RAM, 4GB Disk (Debian 12)
+- Installs all dependencies (python3, rclone, git, cron, curl, jq, logrotate)
+- Clones fit2garmin from GitHub
+- Deploys the modern sync engine (fit2garmin_modern.py)
+- Configures log rotation
+- Deploys sync.sh with alert functionality
+- Deploys the setup wizard (gdrive2garmin-setup)
+- Sets up cron automation (every 30 min during active hours)
+
+**After container creation, access the console and complete setup:**
+
+```bash
+# Access container console (from Proxmox host)
+pct enter <CTID>
+
+# Inside the container, run the interactive setup wizard
+gdrive2garmin-setup
+# Or: bash -c "$(curl -fsSL https://raw.githubusercontent.com/dngoyb/gdrive2garmin/main/setup.sh)"
+```
+
+The setup wizard will guide you through:
+1. ✅ Garmin Connect credentials & authentication (with 2FA/MFA support)
+2. ✅ Google Drive rclone configuration & folder selection
+3. ✅ Alert webhook configuration (ntfy.sh, Discord, Slack, Pushover)
+4. ✅ Live test synchronization & cron validation
 
 ---
 
