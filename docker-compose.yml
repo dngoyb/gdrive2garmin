@@ -1,0 +1,67 @@
+# ==============================================================================
+# gdrive2garmin docker-compose.yml
+# Deploy gdrive2garmin as an LXC-like container via Docker
+# ==============================================================================
+
+version: "3.8"
+
+services:
+  gdrive2garmin:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: gdrive2garmin
+    restart: unless-stopped
+    # Network mode: host for rclone to access Google APIs directly
+    # Alternatively use bridge and set RCLONE_CONFIG env var
+    network_mode: host
+
+    # Environment variables for configuration
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=UTC
+      - RCLONE_REMOTE=gdrive
+      - RCLONE_FOLDER=fit_files
+      - CLEANUP_NON_FIT=true
+      - FIT_RETENTION_DAYS=5
+      - ALERT_WEBHOOK_URL=
+      - ALERT_ON_SUCCESS=false
+
+    # Volumes for persistence
+    volumes:
+      - fit_files:/opt/fit2garmin/fit_files
+      - garmintokens:/root/.garminconnect
+      - gdrive2garmin_log:/var/log/gdrive2garmin.log
+      - ./install:/opt/fit2garmin/install:ro
+
+    # Cron and system services
+    # Running cron inside the container for scheduled syncs
+    command: >
+      /bin/bash -c "
+      # Set up cron job for active hours scheduling
+      echo '0,30 6-11,14-15,17-19 * * * root /opt/fit2garmin/sync.sh >> /var/log/gdrive2garmin.log 2>&1' > /etc/cron.d/gdrive2garmin
+      chmod 644 /etc/cron.d/gdrive2garmin
+
+      # Start cron daemon
+      cron -f &
+
+      # Keep container running
+      while true; do sleep 60; done
+    "
+
+    # Health check
+    healthcheck:
+      test: ["CMD", "bash", "-c", "ls /opt/fit2garmin/fit2garmin.py"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+# Volumes definitions
+volumes:
+  fit_files:
+    driver: local
+  garmintokens:
+    driver: local
+  gdrive2garmin_log:
+    driver: local

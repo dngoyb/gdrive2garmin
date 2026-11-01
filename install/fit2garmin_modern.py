@@ -237,7 +237,7 @@ def find_pending_fit_files() -> list[Path]:
 
 
 def upload_fit_files(
-    client: Garmin, to_upload: list[Path] | None = None
+    client: Garmin, to_upload: list[Path] | None = None, dry_run: bool = False
 ) -> None:
   """Upload pending .fit files to Garmin Connect."""
   if to_upload is None:
@@ -247,6 +247,12 @@ def upload_fit_files(
     return
 
   logger.info(f"Found {len(to_upload)} new .fit file(s) to upload.")
+  if dry_run:
+    logger.info("DRY RUN MODE: No files will be uploaded.")
+    for fit_file in to_upload:
+      logger.info(f"[DRY RUN] Would upload: {fit_file.name}")
+    return
+
   processed = load_processed_files()
   uploaded_count = 0
   duplicate_count = 0
@@ -314,6 +320,11 @@ def main() -> None:
       action="store_true",
       help="Mark all current .fit files as processed so they are skipped",
   )
+  parser.add_argument(
+      "--dry-run",
+      action="store_true",
+      help="Scan for pending files but do not upload (preview only)",
+  )
   args = parser.parse_args()
 
   if args.mark_all_processed:
@@ -325,8 +336,11 @@ def main() -> None:
     return
 
   # Lazy authentication: only connect to Garmin Connect when there are actual files to upload
-  client = get_client()
-  upload_fit_files(client, pending)
+  if not args.dry_run:
+    client = get_client()
+  else:
+    client = None
+  upload_fit_files(client, pending, dry_run=args.dry_run)
 
 
 if __name__ == "__main__":
